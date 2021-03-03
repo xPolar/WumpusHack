@@ -1,55 +1,91 @@
+"""
+MIT License
+
+Copyright (c) 2019 xPolar
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+# Packages.
+## Packages default to Python.
+from bson.int64 import Int64
+## Packages that have to be installed through the package manager.
+import discord
 from discord.ext import commands
-import discord, pymongo, dns, config, asyncio
+## Packages on this machine.
+import config
 
-class inventory(commands.Cog):
-    def __init__(self, bot):
+class Inventory(commands.Cog):
+
+    def __init__(self, bot : commands.AutoShardedBot) -> None:
+        """Whenever the class gets initialized the following function will be executed.
+
+        Args:
+            bot (commands.AutoShardedBot): Our bot.
+        """
+        
         self.bot = bot
+    
+    async def prefix(self, message : discord.Message) -> str:
+        """Get the prefix for a message.
 
-        wumpdb = pymongo.MongoClient(config.URI)["wumpus-hack"]
-        self.users_col = wumpdb['users-beta']
+        Args:
+            message (discord.Message): The message to get the prefix for.
 
+        Returns:
+            str: The prefix that works for the server.
+        """
 
-    def calc_loading(self, doc, base):
-        load_time = base / ((doc['network']['bandwidth'] * doc['pc']['cpu']) + 1)
-        return load_time
+        document = config.prefix.clusters.find_one({"_id": Int64(message.guild.id)})
+        if message.guild:
+            return config.prefix
+        else:
+            return document['prefix'] if document else config.prefix
 
-    @commands.command(aliases=['i', 'inv'])
-    async def inventory(self, ctx):
-        if ctx.invoked_subcommand is None:
-            if ctx.guild != None:
+    @commands.command(aliases = ["i", "inv"])
+    async def inventory(self, ctx : commands.Context) -> None:
+        """View all of the items in your inventory.
+
+        Args:
+            ctx (commands.Context): Discord's context object.
+        """
+
+        if not ctx.invoked_subcommand:
+            if not ctx.guild:
                 await ctx.message.delete()
-
-            #Get user docuemnt from DB and check if they have an account
-            doc = self.users_col.find_one({'user_id': str(ctx.author.id)})
-            if doc == None:
-                await ctx.author.send("`Please type >login to start your adventure!`")
-                return
-
-            #Check for online status
-            if doc['online'] == False:
-                await ctx.author.send("`Your computer is not online. Please >login`")
-                return
-
-            else:
-                inv_string = "__**Components in Inventory**__\n\n"
-                index = 0
-                for item in doc['inventory']:
-                    inv_string = inv_string + "**%s** - `%s`\n%s GHz | %s MSRP\nID: `%s`\n\n" % (item['type'].upper(), item['name'], str(item['system']), str(item['cost']), str(index))
-                    index += 1
-                if index == 0:
-                    inv_string = inv_string + "```No Items in component Inventory.```"
-
-
-                embed = discord.Embed(
-                    title = "Inventory",
-                    description = inv_string,
-                    color = 0x7289da
-                )
-                #Send message
-                await ctx.author.send(content="<:done:592819995843624961> `Inventory information retreived`", embed=embed)
-
-
-
+        document = config.cluster.data.users.find_one({"_id": Int64(ctx.author.id)})
+        if not document:
+            return await ctx.author.send(f"You don't have a computer, please do `{await self.get_prefix(ctx.message)}login` to start your adventure!")
+        elif document["online"] == False:
+            return await ctx.author.send(f"Your computer is currently offline, please do `{await self.get_prefix(ctx.message)}login` to turn it on!")
+        else:
+            inventory = []
+            index = 0
+            for item in document["inventory"]:
+                inventory.append(f"**{item['type'].upper()}** - `{item['name']}`\n{item['system']} GHz | {item['cost']} MSRP\nID: `{index}`")
+                index += 1
+            embed = discord.Embed(
+                title = "Inventory",
+                description = "\n\n".join(inventory) if inventory != [] else "**You have no items in your inventory!**",
+                color = config.maincolor
+            )
+            await ctx.author.send(embed = embed)
 
 def setup(bot):
-    bot.add_cog(inventory(bot))
+    bot.add_cog(Inventory(bot))
